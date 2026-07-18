@@ -390,10 +390,8 @@ public class FNFChartEditor extends JFrame {
         long section = newSteps / 16;
         int offset = (int) (newSteps % 16);
 
-        if (section >= activeSong.notes.size()) {
-            section = activeSong.notes.size() - 1;
-            offset = 15;
-            newSteps = section * 16 + offset;
+        while (section >= activeSong.notes.size()) {
+            activeSong.notes.add(new Section());
         }
 
         positionSteps = newSteps;

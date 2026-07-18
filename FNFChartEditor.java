@@ -200,7 +200,7 @@ public class FNFChartEditor extends JFrame {
                 fromLane = toLane;
                 toLane = tmp;
             }
-            gridPanel.spamNotesForCurrentSection(fromLane, toLane, density, strength);
+            gridPanel.spamNotesForCurrentSection(fromLane, toLane, density, strength, 0);
         });
         p.add(spamNotesBtn);
 
@@ -285,7 +285,7 @@ public class FNFChartEditor extends JFrame {
         p.add(bpmSpinner);
 
         p.add(new JLabel("Speed:"));
-        speedSpinner = new JSpinner(new SpinnerNumberModel(1.6, 0.5, 10.0, 0.1));
+        speedSpinner = new JSpinner(new SpinnerNumberModel(1.6, 0.5, 1000000.0, 0.1));
         p.add(speedSpinner);
 
         p.add(new JLabel("Boyfriend (P1):"));
@@ -324,7 +324,12 @@ public class FNFChartEditor extends JFrame {
             chooser.setDialogTitle("Save Chart JSON Structure");
             int choice = chooser.showSaveDialog(this);
             if (choice == JFileChooser.APPROVE_OPTION) {
-                saveChart(chooser.getSelectedFile());
+                File selectedFile = chooser.getSelectedFile();
+                if (!selectedFile.getName().toLowerCase().endsWith(".json")) {
+                    selectedFile = new File(selectedFile.getAbsolutePath() + ".json");
+                }
+                // Pass the button explicitly so the thread can disable/enable it safely
+                saveChart(selectedFile, saveBtn);
             }
         });
         p.add(saveBtn);
@@ -442,46 +447,71 @@ public class FNFChartEditor extends JFrame {
         }
     }
 
-    private void saveChart(File file) {
+    // FIX: Takes the JButton directly so we don't have to unsafely crawl the UI to find it
+    private void saveChart(File file, JButton buttonToDisable) {
         syncSongDataFromUI();
-        StringBuilder sb = new StringBuilder();
-        sb.append("{\n  \"song\": {\n");
-        sb.append("    \"song\": \"").append(activeSong.song).append("\",\n");
-        sb.append("    \"bpm\": ").append(activeSong.bpm).append(",\n");
-        sb.append("    \"needsVoices\": ").append(activeSong.needsVoices).append(",\n");
-        sb.append("    \"player1\": \"").append(activeSong.player1).append("\",\n");
-        sb.append("    \"player2\": \"").append(activeSong.player2).append("\",\n");
-        sb.append("    \"speed\": ").append(activeSong.speed).append(",\n");
-        sb.append("    \"notes\": [\n");
+        
+        if (buttonToDisable != null) {
+            buttonToDisable.setText("Saving...");
+            buttonToDisable.setEnabled(false);
+        }
 
-        for (int i = 0; i < activeSong.notes.size(); i++) {
-            Section section = activeSong.notes.get(i);
-            sb.append("      {\n");
-            sb.append("        \"lengthInSteps\": ").append(section.lengthInSteps).append(",\n");
-            sb.append("        \"mustHitSection\": ").append(section.mustHitSection).append(",\n");
-            sb.append("        \"sectionNotes\": [\n");
+        new Thread(() -> {
+            try (BufferedWriter writer = new BufferedWriter(new FileWriter(file))) {
+                writer.write("{\n  \"song\": {\n");
+                writer.write("    \"song\": \"" + activeSong.song + "\",\n");
+                writer.write("    \"bpm\": " + activeSong.bpm + ",\n");
+                writer.write("    \"needsVoices\": " + activeSong.needsVoices + ",\n");
+                writer.write("    \"player1\": \"" + activeSong.player1 + "\",\n");
+                writer.write("    \"player2\": \"" + activeSong.player2 + "\",\n");
+                writer.write("    \"speed\": " + activeSong.speed + ",\n");
+                writer.write("    \"notes\": [\n");
 
-            for (int j = 0; j < section.sectionNotes.size(); j++) {
-                double[] note = section.sectionNotes.get(j);
-                sb.append("          [").append(format3(note[0])).append(", ").append((int) note[1]).append(", ").append(format3(note[2])).append("]");
-                if (j < section.sectionNotes.size() - 1) sb.append(",\n");
-                else sb.append("\n");
+                for (int i = 0; i < activeSong.notes.size(); i++) {
+                    Section section = activeSong.notes.get(i);
+                    writer.write("      {\n");
+                    writer.write("        \"lengthInSteps\": " + section.lengthInSteps + ",\n");
+                    writer.write("        \"mustHitSection\": " + section.mustHitSection + ",\n");
+                    writer.write("        \"sectionNotes\": [\n");
+
+                    for (int j = 0; j < section.sectionNotes.size(); j++) {
+                        double[] note = section.sectionNotes.get(j);
+                        writer.write("          [" + format3(note[0]) + ", " + (int) note[1] + ", " + format3(note[2]) + "]");
+                        if (j < section.sectionNotes.size() - 1) {
+                            writer.write(",\n");
+                        } else {
+                            writer.write("\n");
+                        }
+                    }
+
+                    writer.write("        ]\n");
+                    writer.write("      }");
+                    if (i < activeSong.notes.size() - 1) {
+                        writer.write(",\n");
+                    } else {
+                        writer.write("\n");
+                    }
+                }
+
+                writer.write("    ]\n  },\n  \"generatedBy\": \"SNIFF ver.6\"\n}");
+
+                SwingUtilities.invokeLater(() -> {
+                    if (buttonToDisable != null) {
+                        buttonToDisable.setText("Save JSON");
+                        buttonToDisable.setEnabled(true);
+                    }
+                    JOptionPane.showMessageDialog(this, "Chart saved successfully to " + file.getName() + "!");
+                });
+            } catch (IOException e) {
+                SwingUtilities.invokeLater(() -> {
+                    if (buttonToDisable != null) {
+                        buttonToDisable.setText("Save JSON");
+                        buttonToDisable.setEnabled(true);
+                    }
+                    JOptionPane.showMessageDialog(this, "Error saving chart: " + e.getMessage());
+                });
             }
-
-            sb.append("        ]\n");
-            sb.append("      }");
-            if (i < activeSong.notes.size() - 1) sb.append(",\n");
-            else sb.append("\n");
-        }
-
-        sb.append("    ]\n  },\n  \"generatedBy\": \"SNIFF ver.6\"\n}");
-
-        try (FileWriter writer = new FileWriter(file)) {
-            writer.write(sb.toString());
-            JOptionPane.showMessageDialog(this, "Chart saved successfully to " + file.getName() + "!");
-        } catch (IOException e) {
-            JOptionPane.showMessageDialog(this, "Error saving chart: " + e.getMessage());
-        }
+        }).start();
     }
 
     private void loadChart(File file) {
@@ -496,15 +526,18 @@ public class FNFChartEditor extends JFrame {
             String json = content.toString();
             SongData loadedSong = new SongData();
 
-            loadedSong.song = extractJSONString(json, "song");
-            loadedSong.bpm = extractJSONDouble(json, "bpm");
-            loadedSong.needsVoices = extractJSONBool(json, "needsVoices");
-            loadedSong.player1 = extractJSONString(json, "player1");
-            loadedSong.player2 = extractJSONString(json, "player2");
-            loadedSong.speed = extractJSONDouble(json, "speed");
+            int innerSectionOffset = json.indexOf("{", json.indexOf("\"song\":") + 7);
+            if (innerSectionOffset == -1) innerSectionOffset = 0;
+
+            loadedSong.song = extractJSONString(json, "song", innerSectionOffset);
+            loadedSong.bpm = extractJSONDouble(json, "bpm", innerSectionOffset);
+            loadedSong.needsVoices = extractJSONBool(json, "needsVoices", innerSectionOffset);
+            loadedSong.player1 = extractJSONString(json, "player1", innerSectionOffset);
+            loadedSong.player2 = extractJSONString(json, "player2", innerSectionOffset);
+            loadedSong.speed = extractJSONDouble(json, "speed", innerSectionOffset);
 
             List<Section> sections = new ArrayList<>();
-            int notesStartIndex = json.indexOf("\"notes\":");
+            int notesStartIndex = json.indexOf("\"notes\":", innerSectionOffset);
             if (notesStartIndex != -1) {
                 int sectionSearchIndex = notesStartIndex;
                 while (true) {
@@ -515,7 +548,7 @@ public class FNFChartEditor extends JFrame {
                     String secBlock = json.substring(secStart, secEnd + 1);
                     Section section = new Section();
                     
-                    String stepStr = extractJSONString(secBlock, "lengthInSteps");
+                    String stepStr = extractJSONString(secBlock, "lengthInSteps", 0);
                     if (stepStr == null || stepStr.isEmpty()) stepStr = "16";
                     section.lengthInSteps = (int) Double.parseDouble(stepStr.replaceAll("[^0-9.]", ""));
                     section.mustHitSection = secBlock.contains("\"mustHitSection\":true");
@@ -562,8 +595,8 @@ public class FNFChartEditor extends JFrame {
         }
     }
 
-    private String extractJSONString(String raw, String key) {
-        int idx = raw.indexOf("\"" + key + "\"");
+    private String extractJSONString(String raw, String key, int startFrom) {
+        int idx = raw.indexOf("\"" + key + "\"", startFrom);
         if (idx == -1) return "";
         int colon = raw.indexOf(":", idx);
         int startQuote = raw.indexOf("\"", colon);
@@ -577,16 +610,16 @@ public class FNFChartEditor extends JFrame {
         }
     }
 
-    private double extractJSONDouble(String raw, String key) {
+    private double extractJSONDouble(String raw, String key, int startFrom) {
         try {
-            return Double.parseDouble(extractJSONString(raw, key).replaceAll("[^0-9.-]", ""));
+            return Double.parseDouble(extractJSONString(raw, key, startFrom).replaceAll("[^0-9.-]", ""));
         } catch (Exception e) {
             return 0.0;
         }
     }
 
-    private boolean extractJSONBool(String raw, String key) {
-        return extractJSONString(raw, key).contains("true");
+    private boolean extractJSONBool(String raw, String key, int startFrom) {
+        return extractJSONString(raw, key, startFrom).contains("true");
     }
 
     public static void main(String[] args) {
@@ -678,7 +711,7 @@ public class FNFChartEditor extends JFrame {
                         if (ezSpamCheckbox != null && ezSpamCheckbox.isSelected() && !SwingUtilities.isRightMouseButton(e)) {
                             int density = (int) densitySpinner.getValue();
                             int strength = (int) strengthSpinner.getValue();
-                            spamNotesForCurrentSection(clickedUserLane, clickedUserLane, density, strength);
+                            spamNotesForCurrentSection(clickedUserLane, clickedUserLane, density, strength, clickedRow);
                         } else {
                             Section currentSec = activeSong.notes.get(currentSectionIndex);
                             double stepTime = rowToMs(clickedRow);
@@ -770,24 +803,31 @@ public class FNFChartEditor extends JFrame {
 
         private void loadAssets() {
             try {
-                gridGrey = ImageIO.read(new File("assets/charteditor/GridGrey.png"));
-                gridWhite = ImageIO.read(new File("assets/charteditor/GridWhite.png"));
-                
-                bfIcon = ImageIO.read(new File("icons/bf.png"));
-                dadIcon = ImageIO.read(new File("icons/dad.png"));
+                InputStream gridGreyStream = getClass().getResourceAsStream("/assets/charteditor/GridGrey.png");
+                InputStream gridWhiteStream = getClass().getResourceAsStream("/assets/charteditor/GridWhite.png");
+                InputStream bfIconStream = getClass().getResourceAsStream("/icons/bf.png");
+                InputStream dadIconStream = getClass().getResourceAsStream("/icons/dad.png");
 
-                noteArrows[0] = ImageIO.read(new File("notes/LeftComing.png"));
-                noteArrows[1] = ImageIO.read(new File("notes/DownComing.png"));
-                noteArrows[2] = ImageIO.read(new File("notes/UpComing.png"));
-                noteArrows[3] = ImageIO.read(new File("notes/RightComing.png"));
+                if (gridGreyStream != null) gridGrey = ImageIO.read(gridGreyStream);
+                if (gridWhiteStream != null) gridWhite = ImageIO.read(gridWhiteStream);
+                if (bfIconStream != null) bfIcon = ImageIO.read(bfIconStream);
+                if (dadIconStream != null) dadIcon = ImageIO.read(dadIconStream);
+
+                String[] noteNames = {"LeftComing.png", "DownComing.png", "UpComing.png", "RightComing.png"};
+                for (int i = 0; i < 4; i++) {
+                    InputStream noteStream = getClass().getResourceAsStream("/notes/" + noteNames[i]);
+                    if (noteStream != null) {
+                        noteArrows[i] = ImageIO.read(noteStream);
+                    }
+                }
 
                 System.arraycopy(noteArrows, 0, noteArrows, 4, 4);
             } catch (Exception e) {
-                System.out.println("Assets/Icons failed to load, falling back to layout shapes.");
+                System.out.println("Internal resource loading error: " + e.getMessage());
             }
         }
 
-        public void spamNotesForCurrentSection(int laneFrom, int laneTo, int densityValue, int strengthRowsToFill) {
+        public void spamNotesForCurrentSection(int laneFrom, int laneTo, int densityValue, int strengthRowsToFill, int startRow) {
             Section currentSec = activeSong.notes.get(currentSectionIndex);
 
             int safeDensity = Math.max(1, densityValue);
@@ -799,16 +839,19 @@ public class FNFChartEditor extends JFrame {
             int minLane = Math.min(laneFrom, laneTo);
             int maxLane = Math.max(laneFrom, laneTo);
             
+            double startSpamTime = sectionStartTime + (startRow * stepTimeMs);
+            double endSpamTime = sectionStartTime + ((startRow + safeRowsToFill) * stepTimeMs);
+
             currentSec.sectionNotes.removeIf(n -> {
                 int l = (int) n[1];
-                return l >= minLane && l <= maxLane;
+                return l >= minLane && l <= maxLane && n[0] >= startSpamTime && n[0] < endSpamTime;
             });
 
             double rowStep = 1.0 / safeDensity;
             double targetMaxRow = (double) safeRowsToFill;
 
-            for (double row = 0; row < targetMaxRow; row += rowStep) {
-                double time = sectionStartTime + (row * stepTimeMs);
+            for (double offsetRow = 0; offsetRow < targetMaxRow; offsetRow += rowStep) {
+                double time = sectionStartTime + ((startRow + offsetRow) * stepTimeMs);
 
                 for (int targetLane = minLane; targetLane <= maxLane; targetLane++) {
                     double sustain = (double) sustainSpinner.getValue();

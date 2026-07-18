@@ -36,6 +36,7 @@ public class FNFChartEditor extends JFrame {
     private Clip audioClip;
 
     private long positionSteps = 0;
+    private double positionStepsDouble = 0;
     private long lastTickMs = 0;
 
     private ChartGridPanel gridPanel;
@@ -392,9 +393,11 @@ public class FNFChartEditor extends JFrame {
         if (section >= activeSong.notes.size()) {
             section = activeSong.notes.size() - 1;
             offset = 15;
+            newSteps = section * 16 + offset;
         }
 
         positionSteps = newSteps;
+        positionStepsDouble = newSteps;
         currentSectionIndex = (int) section;
         gridPanel.setScrollRowOffset(offset);
     }
@@ -408,10 +411,14 @@ public class FNFChartEditor extends JFrame {
         lastTickMs = now;
 
         double stepMs = (60000.0 / (double) bpmSpinner.getValue()) / 4.0;
-        long deltaSteps = (long) Math.floor(deltaMs / stepMs);
+        double deltaSteps = deltaMs / stepMs;
 
-        if (deltaSteps != 0) {
-            applyPositionSteps(positionSteps + deltaSteps);
+        positionStepsDouble += deltaSteps;
+        long nextSteps = (long) Math.floor(positionStepsDouble);
+
+        if (nextSteps != positionSteps) {
+            applyPositionSteps(nextSteps);
+            gridPanel.repaint();
         }
     }
 
@@ -491,18 +498,15 @@ public class FNFChartEditor extends JFrame {
             String json = content.toString();
             SongData loadedSong = new SongData();
 
-            int innerSectionOffset = json.indexOf("{", json.indexOf("\"song\":") + 7);
-            if (innerSectionOffset == -1) innerSectionOffset = 0;
-
-            loadedSong.song = extractJSONString(json, "song", innerSectionOffset);
-            loadedSong.bpm = extractJSONDouble(json, "bpm", innerSectionOffset);
-            loadedSong.needsVoices = extractJSONBool(json, "needsVoices", innerSectionOffset);
-            loadedSong.player1 = extractJSONString(json, "player1", innerSectionOffset);
-            loadedSong.player2 = extractJSONString(json, "player2", innerSectionOffset);
-            loadedSong.speed = extractJSONDouble(json, "speed", innerSectionOffset);
+            loadedSong.song = extractJSONString(json, "song");
+            loadedSong.bpm = extractJSONDouble(json, "bpm");
+            loadedSong.needsVoices = extractJSONBool(json, "needsVoices");
+            loadedSong.player1 = extractJSONString(json, "player1");
+            loadedSong.player2 = extractJSONString(json, "player2");
+            loadedSong.speed = extractJSONDouble(json, "speed");
 
             List<Section> sections = new ArrayList<>();
-            int notesStartIndex = json.indexOf("\"notes\":", innerSectionOffset);
+            int notesStartIndex = json.indexOf("\"notes\":");
             if (notesStartIndex != -1) {
                 int sectionSearchIndex = notesStartIndex;
                 while (true) {
@@ -513,7 +517,7 @@ public class FNFChartEditor extends JFrame {
                     String secBlock = json.substring(secStart, secEnd + 1);
                     Section section = new Section();
                     
-                    String stepStr = extractJSONString(secBlock, "lengthInSteps", 0);
+                    String stepStr = extractJSONString(secBlock, "lengthInSteps");
                     if (stepStr == null || stepStr.isEmpty()) stepStr = "16";
                     section.lengthInSteps = (int) Double.parseDouble(stepStr.replaceAll("[^0-9.]", ""));
                     section.mustHitSection = secBlock.contains("\"mustHitSection\":true");
@@ -550,6 +554,7 @@ public class FNFChartEditor extends JFrame {
             this.activeSong = loadedSong;
             this.currentSectionIndex = 0;
             this.positionSteps = 0;
+            this.positionStepsDouble = 0;
             this.gridPanel.setScrollRowOffset(0);
             syncSongDataToUI();
             gridPanel.repaint();
@@ -559,8 +564,8 @@ public class FNFChartEditor extends JFrame {
         }
     }
 
-    private String extractJSONString(String raw, String key, int startFrom) {
-        int idx = raw.indexOf("\"" + key + "\"", startFrom);
+    private String extractJSONString(String raw, String key) {
+        int idx = raw.indexOf("\"" + key + "\"");
         if (idx == -1) return "";
         int colon = raw.indexOf(":", idx);
         int startQuote = raw.indexOf("\"", colon);
@@ -574,16 +579,16 @@ public class FNFChartEditor extends JFrame {
         }
     }
 
-    private double extractJSONDouble(String raw, String key, int startFrom) {
+    private double extractJSONDouble(String raw, String key) {
         try {
-            return Double.parseDouble(extractJSONString(raw, key, startFrom).replaceAll("[^0-9.-]", ""));
+            return Double.parseDouble(extractJSONString(raw, key).replaceAll("[^0-9.-]", ""));
         } catch (Exception e) {
             return 0.0;
         }
     }
 
-    private boolean extractJSONBool(String raw, String key, int startFrom) {
-        return extractJSONString(raw, key, startFrom).contains("true");
+    private boolean extractJSONBool(String raw, String key) {
+        return extractJSONString(raw, key).contains("true");
     }
 
     public static void main(String[] args) {
@@ -767,27 +772,20 @@ public class FNFChartEditor extends JFrame {
 
         private void loadAssets() {
             try {
-                InputStream gridGreyStream = getClass().getResourceAsStream("/assets/charteditor/GridGrey.png");
-                InputStream gridWhiteStream = getClass().getResourceAsStream("/assets/charteditor/GridWhite.png");
-                InputStream bfIconStream = getClass().getResourceAsStream("/icons/bf.png");
-                InputStream dadIconStream = getClass().getResourceAsStream("/icons/dad.png");
+                gridGrey = ImageIO.read(new File("assets/charteditor/GridGrey.png"));
+                gridWhite = ImageIO.read(new File("assets/charteditor/GridWhite.png"));
+                
+                bfIcon = ImageIO.read(new File("icons/bf.png"));
+                dadIcon = ImageIO.read(new File("icons/dad.png"));
 
-                if (gridGreyStream != null) gridGrey = ImageIO.read(gridGreyStream);
-                if (gridWhiteStream != null) gridWhite = ImageIO.read(gridWhiteStream);
-                if (bfIconStream != null) bfIcon = ImageIO.read(bfIconStream);
-                if (dadIconStream != null) dadIcon = ImageIO.read(dadIconStream);
-
-                String[] noteNames = {"LeftComing.png", "DownComing.png", "UpComing.png", "RightComing.png"};
-                for (int i = 0; i < 4; i++) {
-                    InputStream noteStream = getClass().getResourceAsStream("/notes/" + noteNames[i]);
-                    if (noteStream != null) {
-                        noteArrows[i] = ImageIO.read(noteStream);
-                    }
-                }
+                noteArrows[0] = ImageIO.read(new File("notes/LeftComing.png"));
+                noteArrows[1] = ImageIO.read(new File("notes/DownComing.png"));
+                noteArrows[2] = ImageIO.read(new File("notes/UpComing.png"));
+                noteArrows[3] = ImageIO.read(new File("notes/RightComing.png"));
 
                 System.arraycopy(noteArrows, 0, noteArrows, 4, 4);
             } catch (Exception e) {
-                System.out.println("Internal resource loading error: " + e.getMessage());
+                System.out.println("Assets/Icons failed to load, falling back to layout shapes.");
             }
         }
 
